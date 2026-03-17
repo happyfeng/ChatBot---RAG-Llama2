@@ -1,5 +1,4 @@
-
-# PDF + Llama2 + LangChain Chatbot
+# RAG + Llama2 + LangChain Chatbot
 
 Build a ChatGPT-style Q&A bot using your own PDFs as the knowledge base, with **RAG (Retrieval-Augmented Generation)** and optional **Llama2 fine-tuning**.
 
@@ -45,11 +44,15 @@ python chat.py
 
 Type questions in the terminal to get answers based on your PDFs.
 
-**Using Ollama’s Llama2 (recommended)**: Set `USE_OLLAMA=true` and `OLLAMA_MODEL=llama2` in `.env`, ensure Ollama is installed and running (e.g. `ollama run llama2`), then run `python chat.py`.
+**Using Ollama's Llama2 (recommended)**: Set `USE_OLLAMA=true` and `OLLAMA_MODEL=llama2` in `.env`, ensure Ollama is installed and running (e.g. `ollama run llama2`), then run `python chat.py`.
 
-To use a fine-tuned Hugging Face model: `python chat.py --finetuned`.
+To use the **fine-tuned model** for RAG, set `USE_OLLAMA=false` and run `python chat.py --finetuned` (see "After fine-tuning" below).
+
+**Using a local or Hugging Face Llama2** (e.g. `NousResearch/Llama-2-7b-chat-hf`, no gated access): run `python chat.py --model NousResearch/Llama-2-7b-chat-hf`; or set `USE_OLLAMA=false` and `LLAMA2_MODEL=NousResearch/Llama-2-7b-chat-hf` in `.env`, then run `python chat.py`.
 
 ### 4. Fine-tune Llama2 (optional)
+
+Fine-tuning uses `finetune.py` (Hugging Face transformers + LoRA/QLoRA). You can run it **without** a Hugging Face account or gated access (see "Without Hugging Face" below).
 
 **Prepare training data**: One JSON per line in `finetune_data/train.jsonl`, e.g.:
 
@@ -67,15 +70,33 @@ Edit `train.jsonl` as needed for higher-quality Q&A pairs.
 
 **Run fine-tuning**:
 
-```bash
-# LoRA fine-tuning (higher GPU memory)
-python finetune.py --epochs 3
+- **Without Hugging Face (recommended)**: No `HF_TOKEN` needed; use a community or local base model:
+  ```bash
+  # Option 1: Community model NousResearch/Llama-2-7b-chat-hf (no gated access)
+  python finetune.py --model NousResearch/Llama-2-7b-chat-hf --epochs 3
 
-# QLoRA to save memory (4-bit)
-python finetune.py --qlora --epochs 3
-```
+  # Option 2: Local HF-format model directory (fully offline)
+  python finetune.py --model /path/to/Llama-2-7b-chat-hf --epochs 3
 
-Output is saved to `finetuned_llama/` (or `--output`). Use it for RAG with `python chat.py --finetuned`.
+  # Add --qlora to reduce VRAM (4-bit)
+  python finetune.py --model NousResearch/Llama-2-7b-chat-hf --qlora --epochs 3
+  ```
+- **With Hugging Face**: To use the official gated model, accept the [HF terms](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf) and set `HF_TOKEN` in `.env`, then:
+  ```bash
+  python finetune.py --epochs 3
+  # Or: python finetune.py --qlora --epochs 3
+  ```
+
+Output is saved to `finetuned_llama/` (or `--output`).
+
+**After fine-tuning**:
+
+1. **Use the fine-tuned model for RAG in this project**: The output is in Hugging Face format. Set **`USE_OLLAMA=false`** in `.env`, then run:
+   ```bash
+   python chat.py --finetuned
+   ```
+   This loads the model from `finetuned_llama/` for Q&A with RAG.
+2. **Use the fine-tuned model in Ollama**: Convert `finetuned_llama/` to a format Ollama supports (e.g. GGUF) and import (e.g. `ollama create`). This project does not include that conversion; search for "Hugging Face to GGUF / import into Ollama".
 
 ## Project structure
 
@@ -127,14 +148,13 @@ In `.env` you can set:
 1. **Ollama recommended**: No Hugging Face account needed; install Ollama, run `ollama run llama2`, set `USE_OLLAMA=true` in `.env`. For Hugging Face: Llama2 is gated—accept terms and set `HF_TOKEN`; if you already have the model locally, set `LLAMA2_MODEL` to that path and `USE_OLLAMA=false`.
 2. **Low VRAM**: Use 4-bit quantization or a smaller model; for fine-tuning use `--qlora`.
 3. **CPU only**: RAG can run on CPU but inference is slow; fine-tuning should use GPU.
-4. **Ollama**: Set `USE_OLLAMA=true` and `OLLAMA_MODEL=llama2` in `.env` and ensure Ollama is running (`ollama run llama2`). RAG chat works the same as with Hugging Face; fine-tuning still uses `finetune.py` (HF/transformers). To use a fine-tuned model in Ollama you need to convert/import it separately.
+4. **Ollama**: Set `USE_OLLAMA=true` and `OLLAMA_MODEL=llama2` in `.env` and ensure Ollama is running (`ollama run llama2`). RAG chat works the same as with Hugging Face. For fine-tuning without HF, use `--model NousResearch/Llama-2-7b-chat-hf` or a local path; to use the fine-tuned model here set `USE_OLLAMA=false` and run `python chat.py --finetuned`. To run the fine-tuned model inside Ollama, convert to GGUF and import separately.
 5. **Offline / no network**: Set `HF_HUB_OFFLINE=1` in `.env` and ensure the embedding model is available locally. Either **(a)** run `ingest.py` or load the embedding model once on a connected machine and copy `~/.cache/huggingface/` to the offline machine, or **(b)** on a connected machine run `huggingface-cli download sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 --local-dir ./models/paraphrase-multilingual-MiniLM-L12-v2`, copy that directory to the offline machine, set `EMBEDDING_MODEL=./models/paraphrase-multilingual-MiniLM-L12-v2` (or absolute path) and `HF_HUB_OFFLINE=1` in `.env`.
-6. **Fine-tune 401 Unauthorized or SSL certificate error**: Llama2 is gated—accept the terms on [Hugging Face](https://huggingface.co/meta-llama/Llama-2-7b-chat-hf) and set `HF_TOKEN=your_token` in `.env`. If the environment cannot reach HF (e.g. corporate network, certificate issues), download the model on a machine with access, copy the model directory to the server, set `LLAMA2_MODEL=/path/on/server/to/model` in `.env`, or run `python finetune.py --model /path/to/Llama-2-7b-chat-hf --epochs 3`. The script detects a local path and uses `local_files_only`, so it does not call Hugging Face.
+6. **Fine-tune 401 / SSL / gated**: To avoid HF gated access and SSL issues, use a non-gated base model: `python finetune.py --model NousResearch/Llama-2-7b-chat-hf --epochs 3` (no `HF_TOKEN`). For fully offline fine-tuning, use a local HF-format directory: `python finetune.py --model /path/to/Llama-2-7b-chat-hf --epochs 3`. The script uses `local_files_only` for local paths.
 
+---
 
-=========================================================================
-==========================Chinese========================================
-=========================================================================
+## 中文 (Chinese)
 
 # 基于 PDF + Llama2 + LangChain 的 Chatbot
 
